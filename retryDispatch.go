@@ -31,13 +31,14 @@ type RetryDispatch struct {
 	pendingsRaw  map[uint64]retryMessage
 
 	// Common
-	closing     bool
-	closed      bool
-	lgr         *zap.Logger
-	retryExName string
-	retryExType string
-	wg          sync.WaitGroup
-	tracer      ITracer
+	closing         bool
+	closed          bool
+	lgr             *zap.Logger
+	retryExName     string
+	retryWaitQName  string
+	retryPostWaitEx string
+	wg              sync.WaitGroup
+	tracer          ITracer
 }
 
 func NewNotifDispatch(
@@ -45,29 +46,54 @@ func NewNotifDispatch(
 	lgr *zap.Logger,
 	tracer ITracer,
 	retryExName string,
-	retryExType string,
+	retryWaitQName string,
+	retryPostWaitEx string,
 ) *RetryDispatch {
 
 	disp := &RetryDispatch{
-		eventQueue:   make(chan retryMessage, 1000),
-		chnlManager:  chnlManager,
-		messageCount: 0,
-		pendingsRaw:  map[uint64]retryMessage{},
-		closing:      false,
-		closed:       false,
-		lgr:          lgr,
-		retryExName:  retryExName,
-		retryExType:  retryExType,
-		tracer:       tracer,
+		eventQueue:      make(chan retryMessage, 1000),
+		chnlManager:     chnlManager,
+		messageCount:    0,
+		pendingsRaw:     map[uint64]retryMessage{},
+		closing:         false,
+		closed:          false,
+		lgr:             lgr,
+		retryExName:     retryExName,
+		retryWaitQName:  retryWaitQName,
+		retryPostWaitEx: retryPostWaitEx,
+		tracer:          tracer,
 	}
 
 	// - setting up channel
 	chnlBuilder := usago.NewChannelBuilder().WithExchange(
 		retryExName,
-		retryExType,
+		"topic",
 		true,
 		false,
 		false,
+		false,
+		nil,
+	).WithExchange(
+		retryPostWaitEx,
+		"topic",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	).WithQueue(
+		retryWaitQName,
+		true,
+		false,
+		false,
+		false,
+		map[string]interface{}{
+			"x-dead-letter-exchange": retryPostWaitEx,
+		},
+	).WithQueueBinding(
+		retryWaitQName,
+		"#",
+		retryExName,
 		false,
 		nil,
 	).WithConfirms(true)
@@ -134,7 +160,7 @@ func (disp *RetryDispatch) Close() {
 }
 
 // - Event channel handling
-func (disp *RetryDispatch) DispatchEventNotification(
+func (disp *RetryDispatch) DispatchRetry(
 	ctx context.Context,
 	queueName string,
 	msg amqp091.Delivery,
@@ -200,10 +226,12 @@ func (disp *RetryDispatch) processQueue() {
 	}
 }
 
-func (disp *RetryDispatch) publishEvent(msg retryMessage) error {	
+func (disp *RetryDispatch) publishEvent(msg retryMessage) error {
 
 	// TODO implement tracepart
 	msg.RequestStartTime = time.Now()
+	waitSecInt := int(msg.WaitDuration.Milliseconds())
+
 	sqno, err := disp.channelCtx.Publish(
 		disp.retryExName,
 		msg.QueueName,
@@ -212,7 +240,7 @@ func (disp *RetryDispatch) publishEvent(msg retryMessage) error {
 		amqp091.Publishing{
 			ContentType: msg.ContentType,
 			Body:        msg.Body,
-			Expiration:  strconv.Itoa(int(msg.WaitDuration.Seconds()) * msg.Retries),
+			Expiration:  strconv.Itoa((waitSecInt * msg.Retries) + waitSecInt),
 			Headers: amqp091.Table{
 				"traceparent": fmt.Sprintf(
 					"%s-%s-%s-%s",
