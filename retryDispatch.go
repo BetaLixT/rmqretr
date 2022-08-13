@@ -41,7 +41,7 @@ type RetryDispatch struct {
 	tracer          ITracer
 }
 
-func NewNotifDispatch(
+func NewRetryDispatch(
 	chnlManager *usago.ChannelManager,
 	lgr *zap.Logger,
 	tracer ITracer,
@@ -193,6 +193,7 @@ func (disp *RetryDispatch) DispatchRetry(
 	disp.messageQueued()
 	disp.eventQueue <- retryMessage{
 		QueueName:       queueName,
+		RoutingKey:      msg.RoutingKey,
 		Retries:         retrParsed,
 		WaitDuration:    duration,
 		ContentType:     msg.ContentType,
@@ -250,6 +251,7 @@ func (disp *RetryDispatch) publishEvent(msg retryMessage) error {
 					msg.Flg,
 				),
 				RETRIES_HEADER_KEY: msg.Retries,
+				ROUTINGKEY_HEADER_KEY: msg.RoutingKey,
 			},
 		},
 	)

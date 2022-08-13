@@ -42,7 +42,7 @@ func GetRetryDispatch() *RetryDispatch {
 		"amqp://guest:guest@localhost:5672/",
 		lgr,
 	)
-	return NewNotifDispatch(
+	return NewRetryDispatch(
 		usago,
 		lgr,
 		&MockTracer{},

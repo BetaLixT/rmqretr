@@ -10,6 +10,7 @@ type retryMessage struct {
 	WaitDuration time.Duration
 	ContentType  string
 	Body         []byte
+	RoutingKey   string
 
 	// Trace inco
 	Ver              string
