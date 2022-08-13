@@ -6,7 +6,7 @@ import (
 
 type retryMessage struct {
 	QueueName    string
-	Retries      int
+	Retries      int32
 	WaitDuration time.Duration
 	ContentType  string
 	Body         []byte

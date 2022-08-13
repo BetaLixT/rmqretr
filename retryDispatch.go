@@ -164,7 +164,7 @@ func (disp *RetryDispatch) DispatchRetry(
 	ctx context.Context,
 	queueName string,
 	msg amqp091.Delivery,
-	maxRetries int,
+	maxRetries int32,
 	duration time.Duration,
 ) error {
 
@@ -179,8 +179,8 @@ func (disp *RetryDispatch) DispatchRetry(
 		)
 	}
 	retries := msg.Headers[RETRIES_HEADER_KEY]
-	retrParsed := 0
-	retrParsed, ok := retries.(int)
+	retrParsed := int32(0)
+	retrParsed, ok := retries.(int32)
 	if ok {
 		if retrParsed >= maxRetries {
 			disp.lgr.Error("failed after max retries")
@@ -240,7 +240,7 @@ func (disp *RetryDispatch) publishEvent(msg retryMessage) error {
 		amqp091.Publishing{
 			ContentType: msg.ContentType,
 			Body:        msg.Body,
-			Expiration:  strconv.Itoa((waitSecInt * msg.Retries) + waitSecInt),
+			Expiration:  strconv.Itoa((waitSecInt * int(msg.Retries)) + waitSecInt),
 			Headers: amqp091.Table{
 				"traceparent": fmt.Sprintf(
 					"%s-%s-%s-%s",
