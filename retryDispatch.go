@@ -209,6 +209,59 @@ func (disp *RetryDispatch) DispatchRetry(
 	return nil
 }
 
+// - Event channel handling
+func (disp *RetryDispatch) DispatchRetryData(
+	ctx context.Context,
+	queueName string,
+	key string,
+	data []byte,
+	contentType string,
+	retries any,
+	maxRetries int32,
+	duration time.Duration,
+) error {
+
+	if disp.closing {
+		return gorr.NewError(
+			gorr.ErrorCode{
+				Code:    12000,
+				Message: "DispatchChannelClosed",
+			},
+			500,
+			"",
+		)
+	}
+
+	retrParsed := int32(0)
+	retrParsed, ok := retries.(int32)
+	if ok {
+		if retrParsed >= maxRetries {
+			disp.lgr.Error("failed after max retries")
+			return fmt.Errorf("failed after max retries")
+		}
+		retrParsed++
+	}
+
+	ver, tid, pid, rid, flg := disp.tracer.ExtractTraceInfo(ctx)
+	disp.messageQueued()
+	disp.eventQueue <- retryMessage{
+		QueueName:       queueName,
+		RoutingKey:      key,
+		Retries:         retrParsed,
+		WaitDuration:    duration,
+		ContentType:     contentType,
+		Body:            data,
+		Ver:             ver,
+		Tid:             tid,
+		Pid:             pid,
+		Rid:             rid,
+		Flg:             flg,
+		Tracepart:       "000",
+		InternalRetries: 0,
+	}
+	return nil
+}
+
 func (disp *RetryDispatch) retryEventNotification(
 	evnt retryMessage,
 ) {
@@ -250,7 +303,7 @@ func (disp *RetryDispatch) publishEvent(msg retryMessage) error {
 					msg.Pid,
 					msg.Flg,
 				),
-				RETRIES_HEADER_KEY: msg.Retries,
+				RETRIES_HEADER_KEY:    msg.Retries,
 				ROUTINGKEY_HEADER_KEY: msg.RoutingKey,
 			},
 		},
